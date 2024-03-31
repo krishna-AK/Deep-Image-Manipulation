@@ -1,0 +1,1 @@
+This project separates content and style from any image, using this we can generate stylized versions of the image while preserving structural information of the image. This is based on Adobe's research paper 'Swapping Autoencoder for Deep Image Manipulation'.
