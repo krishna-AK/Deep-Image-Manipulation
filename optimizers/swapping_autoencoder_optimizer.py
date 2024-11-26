@@ -65,7 +65,8 @@ class SwappingAutoencoderOptimizer():
     def train_one_step(self, data_i, total_steps_so_far):
         # images_minibatch = self.prepare_images(data_i)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        images_minibatch = data_i.to(device)
+        # images_minibatch = data_i.to(device)
+        images_minibatch = torch.cat(data_i, dim=0).to(device)
         if self.toggle_training_mode() == "generator":
             losses = self.train_discriminator_one_step(images_minibatch)
         else:

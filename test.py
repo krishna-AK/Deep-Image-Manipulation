@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 from models.swapping_autoencoder_model import SwappingAutoencoderModel
 from options import TrainOptions  # Update this as per your options implementation
-from ValorantDataset import ValorantDataset
+from HumanFaces import HumanFaces
 from AnimeDataset import AnimeDataset
 from torch.utils.data import DataLoader
 
@@ -27,7 +27,8 @@ def test_model(model, test_loader):
     """ Generate output using the model and return it. """
     with torch.no_grad():
         for data in test_loader:
-            images = data.to(model.opt.device)  # Adjust based on your dataset format
+            # images = data.to(model.opt.device)
+            images = torch.cat(data, dim=0).to(model.opt.device)
             sp, gl = model.encode(images)
             print(gl)
             generated_images = model.decode(sp, gl)
@@ -36,12 +37,13 @@ def test_model(model, test_loader):
 
 
 import torch
-torch.device('cpu')
+torch.device('cuda')
 
 def generate_samples(model, test_loader, no_of_samples=10, noise_scale_factor=1):
     with torch.no_grad():
         for data in test_loader:
-            images = data.to(model.opt.device)
+            # images = data.to(model.opt.device)
+            images = torch.cat(data, dim=0).to(model.opt.device)
             sp, gl = model.encode(images)
 
             # Calculate the standard deviation of gl
@@ -117,14 +119,14 @@ options = Options()  # Update this line based on how you handle options
 model = SwappingAutoencoderModel(options)
 
 # Paths to model components
-epoch = 639200
+epoch = 62400
 path = "train_models/Folder_SC8_GC2048_Res2_DSsp4_DSgl2_Ups4_PS32/"
 
 # Load model components
 model = load_model(model,path,epoch)
 
 # Prepare test data
-test_data = AnimeDataset.load('datasets/flickr_faces_dataset_paths.pkl')  # Update with your dataset path
+test_data = HumanFaces.load('datasets/human_faces_paths.pkl')  # Update with your dataset path
 test_loader = DataLoader(test_data, batch_size=4, shuffle=True)
 
 # # Test the model

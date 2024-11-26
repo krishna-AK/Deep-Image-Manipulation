@@ -9,6 +9,7 @@ from models.Encoder import StyleGAN2ResnetEncoder
 from models.Generator import StyleGAN2ResnetGenerator
 from models.patch_discriminator import StyleGAN2PatchDiscriminator
 from models.CapsuleBasedEncoder import CapsuleBasedEncoder
+from models.Encoder import StyleGAN2ResnetEncoder
 
 
 class SwappingAutoencoderModel(torch.nn.Module):
@@ -16,8 +17,8 @@ class SwappingAutoencoderModel(torch.nn.Module):
     def __init__(self, opt):
         super().__init__()
         self.opt = opt
-        # self.E = StyleGAN2ResnetEncoder(opt)
-        self.E = CapsuleBasedEncoder(opt)
+        self.E = StyleGAN2ResnetEncoder(opt)
+        # self.E = CapsuleBasedEncoder(opt)
         self.G = StyleGAN2ResnetGenerator(opt)
         if self.opt.lambda_GAN > 0.0:
             self.D = StyleGAN2Discriminator(opt)

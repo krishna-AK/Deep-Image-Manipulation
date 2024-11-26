@@ -1,14 +1,14 @@
 import itertools
 import sys
 import os
-import data
+# import data
 import torch
 from torch.utils.data import DataLoader
-
+# 1
 import models
 import optimizers
 
-from ValorantDataset import ValorantDataset
+from HumanFaces import HumanFaces
 from AnimeDataset import AnimeDataset
 from models.swapping_autoencoder_model import SwappingAutoencoderModel
 from optimizers.swapping_autoencoder_optimizer import SwappingAutoencoderOptimizer
@@ -57,11 +57,12 @@ def logLosses(loss_log, dir):
 
 # Setup device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
 
 opt = Options()
 createAndSetModelFolder(opt)
 
-data = AnimeDataset.load('datasets/flickr_faces_dataset_paths.pkl')
+data = HumanFaces.load('datasets/human_faces_paths.pkl')
 dataset = DataLoader(data, batch_size=opt.batch_size, shuffle=True)  # Adjust batch size as needed
 dataset_iterator = itertools.cycle(dataset)
 

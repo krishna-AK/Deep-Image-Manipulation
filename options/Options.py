@@ -43,7 +43,7 @@ class Options:
         #     train params
         self.isTrain = True
         self.continue_train = True
-        self.resume_iter = "492800"
+        self.resume_iter = "62400"
 
         # Additional parameters
         self.netG_scale_capacity = 1

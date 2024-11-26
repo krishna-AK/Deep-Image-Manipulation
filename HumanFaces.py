@@ -5,10 +5,14 @@ from PIL import Image
 from torch.utils.data import Dataset
 import pickle
 
-import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
+# import torchvision.transforms as transforms
 
+import torchvision
 
-class ValorantDataset(Dataset):
+IMG_DIMS = 128
+
+class HumanFaces(Dataset):
     def __init__(self, image_dir=None, transform=None, image_paths=None):
         self.transform = transform
 
@@ -35,32 +39,32 @@ class ValorantDataset(Dataset):
     @staticmethod
     def load(file_path):
 
-        transform = transforms.Compose([
-            transforms.Resize((512, 512)),
-            transforms.ToTensor(),
+        transform = torchvision.transforms.Compose([
+            torchvision.transforms.Resize((IMG_DIMS, IMG_DIMS)),
+            torchvision.transforms.ToTensor(),
             # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Standard normalization
         ])
 
         with open(file_path, 'rb') as f:
             image_paths = pickle.load(f)
-        return ValorantDataset(image_paths=image_paths, transform=transform)
+        return HumanFaces(image_paths=image_paths, transform=transform)
 
 
 if __name__ == '__main__':
 
 
-    transform = transforms.Compose([
-        transforms.Resize((512, 512)),
-        transforms.ToTensor(),
+    transform = torchvision.transforms.Compose([
+        torchvision.transforms.Resize((IMG_DIMS, IMG_DIMS)),
+        torchvision.transforms.ToTensor(),
         # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Standard normalization
     ])
 
     # Assuming you've already created an instance of the dataset
-    dataset = ValorantDataset(image_dir="D:\\PycharmProjects\\CAE\\screenshots\\Valorant", transform=transform)
+    dataset = HumanFaces(image_dir="D:\projects\Humans", transform=transform)
 
 
     # Save the dataset information
-    with open('datasets/valorant_dataset_paths.pkl', 'wb') as f:
+    with open('datasets/human_faces_paths.pkl', 'wb') as f:
         pickle.dump(dataset.image_paths, f)
 
 
@@ -73,8 +77,7 @@ if __name__ == '__main__':
 
     # view transformed image
 
-    import matplotlib.pyplot as plt
-    import torchvision.transforms as transforms
+    
 
     # Assuming the ValorantDataset and the transform have been defined as before
 
@@ -82,13 +85,13 @@ if __name__ == '__main__':
     # dataset = ValorantDataset(image_dir='/screenshots/valorant', transform=transform)
 
     # Load an image (for example, the first image in the dataset)
-    img, _ = dataset[121]  # 'img' is now a transformed tensor
+    img, _ = dataset[12]  # 'img' is now a transformed tensor
 
     # Function to convert a tensor to a PIL Image
     def tensor_to_pil(tensor):
         tensor = tensor.clone()  # Clone the tensor so we don't make changes to the original
         tensor = tensor.clamp(0, 1)  # Ensure values are in the range [0, 1]
-        return transforms.ToPILImage()(tensor)
+        return torchvision.transforms.ToPILImage()(tensor)
 
 
     # Convert the tensor to a PIL Image and display it

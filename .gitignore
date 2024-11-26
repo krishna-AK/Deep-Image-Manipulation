@@ -1,0 +1,5 @@
+__pycache__
+checkpoints
+datasets
+.venv
+train_models
