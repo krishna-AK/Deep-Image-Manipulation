@@ -81,6 +81,7 @@ class Options:
 
         self.save_training_models_dir = 'train_models/'
         self.model_dir = 'default'
+        self.dataset_name = 'dummy'
 
 
     def load_from_file(self, file_path):

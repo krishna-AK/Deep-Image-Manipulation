@@ -18,7 +18,8 @@ def createAndSetModelFolder(opt):
     # Create a folder name using the given options
     folder_name = (f"Folder_SC{opt.spatial_code_ch}_GC{opt.global_code_ch}_Res{opt.netG_num_base_resnet_layers}"
                    f"_DSsp{opt.netE_num_downsampling_sp}"
-                   f"_DSgl{opt.netE_num_downsampling_gl}_Ups{opt.netG_no_of_upsamplings}_PS{opt.patch_size}")
+                   f"_DSgl{opt.netE_num_downsampling_gl}_Ups{opt.netG_no_of_upsamplings}_PS{opt.patch_size}"
+                   f"-{opt.dataset_name}")
 
     # Use os.path.join for proper path handling
     model_dir = os.path.join(opt.save_training_models_dir, folder_name)
@@ -96,18 +97,16 @@ class Prefetcher:
         return self.next()
 
 
-def train():
+def train(opt, dataset_object_path):
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA not available! Aborting training.")
     
     device = torch.device('cuda')
 
-    # Initialize options and directories
-    opt = Options()
     createAndSetModelFolder(opt)
 
     # Load dataset
-    data = DatasetObj.load('dataset-objects/human_faces_paths.pkl')
+    data = DatasetObj.load(dataset_object_path)
 
     # Limit the dataset to 7000 samples
     subset_size = 7000
@@ -149,11 +148,12 @@ def train():
                 with iter_counter.time_measurement("train"):
                     losses = optimizer.train_one_step(cur_data, iter_counter.steps_so_far)
 
-                    # Log losses to console
-                    print(f"Iteration {iter_counter.steps_so_far}: ", end="")
-                    for key in sorted(losses.keys()):
-                        print(f"{key}: {losses[key]:.4f}", end=", ")
-                    print()
+                    if iter_counter.steps_so_far%1000 == 0:
+                        # Log losses to console
+                        print(f"Iteration {iter_counter.steps_so_far}: ", end="")
+                        for key in sorted(losses.keys()):
+                            print(f"{key}: {losses[key]:.4f}", end=", ")
+                        print()
 
                     # Compute gradient flow (if needed)
                     gen_grad_flow = get_gradient_flow(model.G, "Generator")
@@ -195,4 +195,6 @@ if __name__ == '__main__':
     gc.collect()
     torch.cuda.empty_cache()
     print(torch.cuda.memory_summary(device=None, abbreviated=False))
-    train()
+
+    opt = Options()
+    train(opt, 'dataset-objects/human_faces_paths.pkl')

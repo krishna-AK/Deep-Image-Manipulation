@@ -141,15 +141,15 @@ options = Options()  # Make sure this loads your options correctly
 model = SwappingAutoencoderModel(options)
 
 # Paths to model components
-steps = 28032
-path = "train_models/Folder_SC8_GC512_Res3_DSsp3_DSgl1_Ups3_PS32/"
+steps = 7000
+path = "train_models/Folder_SC8_GC512_Res3_DSsp3_DSgl1_Ups3_PS32-ffhq-128/"
 
 # Load model components
 model = load_model(model, path, steps)
 
 # Prepare test data
 # Ensure that your Dataset class returns images in the correct format
-test_data = DatasetObj.load('dataset-objects/human_faces_paths.pkl')
+test_data = DatasetObj.load('dataset-objects/ffhq-face-data-set.pkl')
 
   # Limit the dataset to 1000 samples
 subset_size\

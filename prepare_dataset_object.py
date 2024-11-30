@@ -50,17 +50,22 @@ transform = torchvision.transforms.Compose([
     # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Standard normalization
 ])
 
-if __name__ == '__main__':
+
+def prepare_dataset_obj(source_dataset_folder, dataset_name):
 
 
+    # Create an instance of DatasetObj
+    dataset = DatasetObj(image_dir=source_dataset_folder, transform=transform)
 
-    # Assuming you've already created an instance of the dataset
-    dataset = DatasetObj(image_dir="D:/vscodeProjects/Deep-Image-Manipulation/datasets/human_faces_kaggle/Humans", transform=transform)
-
+    # Ensure the output folder exists
+    os.makedirs('dataset-objects', exist_ok=True)
 
     # Save the dataset information
-    with open('dataset-objects/human_faces_paths.pkl', 'wb') as f:
+    dataset_path = f'dataset-objects/{dataset_name}.pkl'
+    with open(dataset_path, 'wb') as f:
         pickle.dump(dataset.image_paths, f)
+
+    print(f"Dataset saved to {dataset_path}")
 
 
     # with open('valorant_dataset_paths.pkl', 'rb') as f:
@@ -88,5 +93,10 @@ if __name__ == '__main__':
     plt.imshow(pil_img)
     plt.axis('off')
     plt.show()
+
+
+
+if __name__ == '__main__':
+    prepare_dataset_obj()
 
 
