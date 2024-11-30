@@ -33,7 +33,7 @@ class SwappingAutoencoderModel(torch.nn.Module):
         self.l1_loss = torch.nn.L1Loss()
 
         if (not self.opt.isTrain) or self.opt.continue_train:
-            self.load(int(self.opt.resume_iter.replace("k", "")))
+            self.load(int(self.opt.resume_iter))
 
         if self.opt.num_gpus > 0:
             self.to("cuda:0")
@@ -267,7 +267,7 @@ class SwappingAutoencoderModel(torch.nn.Module):
 
     def save(self, epoch, save_optimizer_state=True):
        pass
-    def load(self, epoch):
+    def load(self, steps):
         """
         Load the model's state from saved files.
 
@@ -275,12 +275,12 @@ class SwappingAutoencoderModel(torch.nn.Module):
         :param epoch: Epoch number from which to load the saved states.
         """
 
-        load_dir = self.opt.save_training_models_dir
+        load_dir = self.opt.model_dir
         # File paths for the saved states
-        e_path = os.path.join(load_dir, f'E_epoch_{epoch}.pth')
-        g_path = os.path.join(load_dir, f'G_epoch_{epoch}.pth')
-        d_path = os.path.join(load_dir, f'D_epoch_{epoch}.pth')
-        dpatch_path = os.path.join(load_dir, f'Dpatch_epoch_{epoch}.pth')
+        e_path = os.path.join(load_dir, f'E_steps_{steps}.pth')
+        g_path = os.path.join(load_dir, f'G_steps_{steps}.pth')
+        d_path = os.path.join(load_dir, f'D_steps_{steps}.pth')
+        dpatch_path = os.path.join(load_dir, f'Dpatch_steps_{steps}.pth')
 
         # Check if the files exist
         if not os.path.exists(e_path) or not os.path.exists(g_path) or not os.path.exists(d_path) or not os.path.exists(dpatch_path):
@@ -291,7 +291,8 @@ class SwappingAutoencoderModel(torch.nn.Module):
         self.E.load_state_dict(torch.load(e_path, map_location=self.opt.device))
         self.G.load_state_dict(torch.load(g_path, map_location=self.opt.device))
         self.D.load_state_dict(torch.load(d_path, map_location=self.opt.device))
-        self.Dpatch.load_state_dict(torch.load(dpatch_path, map_location=self.opt.device))
+        if self.opt.lambda_PatchGAN > 0:
+            self.Dpatch.load_state_dict(torch.load(dpatch_path, map_location=self.opt.device))
 
 
-        print(f"Model loaded from epoch {epoch}")
+        print(f"Model loaded from steps {steps}")

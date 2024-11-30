@@ -8,28 +8,33 @@ def plot_losses_from_log(log_file_path):
     iter_val = -1
     # Read and process the log file
     with open(log_file_path, 'r') as file:
-        for line in file:
-            parts = line.strip().split(', ')
-            # if len(parts) == 2:
-            iteration, losses = parts[0], parts[1:]
-            z = int(iteration.split(':')[1].strip())
-            if z > iter_val:
-                iter_val = z
-            else:
-                continue
-            # iteration = int(iteration.split()[1])  # Extract iteration number
+        try:
+            for line in file:
+                parts = line.strip().split(', ')
+                # if len(parts) == 2:
+                epoch, iteration, losses = parts[0], parts[1], parts[2:]
+                z = int(iteration.split(' ')[1].strip())
+                # epoch = int(epoch.split(' ')[1].strip())
+                # print(epoch)
+                # if epoch < 0:
+                #     continue
+                if z > iter_val:
+                    iter_val = z
+                else:
+                    continue
+                # iteration = int(iteration.split()[1])  # Extract iteration number
 
-            # Process individual losses
-            for loss in losses:
-                key, value = loss.split(':')
-                key = key.strip()
-                value = float(value.strip())
+                # Process individual losses
+                for loss in losses:
+                    key, value = loss.split(':')
+                    key = key.strip()
+                    value = float(value.strip())
 
-                if key not in loss_values:
-                    loss_values[key] = []
-                loss_values[key].append(value)
-
-            iterations.append(iter_val)
+                    if key not in loss_values:
+                        loss_values[key] = []
+                    loss_values[key].append(value)
+        except Exception:
+            pass
 
     # Plotting
     plt.figure(figsize=(10, 6))
@@ -43,10 +48,12 @@ def plot_losses_from_log(log_file_path):
     # plt.plot([i * 16 for i in range(len(t_losses))], t_losses, label='total_loss')
     all_keys = loss_values.keys()
     plot_keys = ['D_total','G_L1','G_GAN_rec']
-    G_losses = ['G_L1','G_GAN_mix', 'G_GAN_rec','G_mix']
+    # G_losses = ['G_L1','G_GAN_mix', 'G_GAN_rec','G_mix']
+    # G_losses = ['G_GAN_rec','G_GAN_mix']
     D_losses = ['D_real','D_mix','D_rec']
+    # D_losses = ['D_rec']
     patch_losses = ['PatchD_mix','PatchD_real']
-    for key in G_losses:
+    for key in D_losses:
         values = [loss_values[key][i] for i in range(0,len(loss_values[key]),1)]
         plt.plot([i*16 for i in range(0,len(values))], values, label=key)
 
@@ -59,5 +66,5 @@ def plot_losses_from_log(log_file_path):
 
 
 # Example usage
-log_file_path = 'D:\\PycharmProjects\\SAE\\train_models\\Folder_SC8_GC2048_Res2_DSsp4_DSgl2_Ups4_PS32\\loss_log.txt'  # Replace with your actual log file path
+log_file_path = 'train_models\Folder_SC8_GC512_Res3_DSsp3_DSgl1_Ups3_PS32\loss_log.txt'  # Replace with your actual log file path
 plot_losses_from_log(log_file_path)

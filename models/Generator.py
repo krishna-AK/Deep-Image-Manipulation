@@ -130,8 +130,8 @@ class StyleGAN2ResnetGenerator(torch.nn.Module):
         self.add_module("ToRGB", last_layer)
 
     def nf(self, num_up):
-        ch = 128 * (2 ** (self.netE_num_downsampling_sp - num_up))
-        ch = int(min(512, ch) * self.netG_scale_capacity)
+        ch = 64 * (2 ** (self.netE_num_downsampling_sp - num_up))
+        ch = int(min(256, ch) * self.netG_scale_capacity)
         return ch
 
     def forward(self, spatial_code, global_code):
@@ -143,7 +143,7 @@ class StyleGAN2ResnetGenerator(torch.nn.Module):
             resblock = getattr(self, "HeadResnetBlock%d" % i)
             x = resblock(x, global_code)
 
-        for j in range(self.netE_num_downsampling_sp):
+        for j in range(self.netG_no_of_upsamplings):
             key_name = 2 ** (4 + j)
             upsampling_layer = getattr(self, "UpsamplingResBlock%d" % key_name)
             x = upsampling_layer(x, global_code)

@@ -1,18 +1,17 @@
 import os
 
-import torch
 from PIL import Image
 from torch.utils.data import Dataset
 import pickle
 
 import matplotlib.pyplot as plt
-# import torchvision.transforms as transforms
+import torchvision.transforms as transforms
 
 import torchvision
 
 IMG_DIMS = 128
 
-class HumanFaces(Dataset):
+class DatasetObj(Dataset):
     def __init__(self, image_dir=None, transform=None, image_paths=None):
         self.transform = transform
 
@@ -22,9 +21,10 @@ class HumanFaces(Dataset):
         elif image_dir is not None:
             # Initialize dataset from a directory
             self.image_dir = image_dir
-            self.image_paths = [os.path.join(image_dir, img) for img in os.listdir(image_dir)]
+            self.image_paths = [os.path.join(image_dir, img) for img in os.listdir(image_dir) if img.lower().endswith(('.png', '.jpg', '.jpeg'))]
         else:
-            raise ValueError("Either image_dir or image_paths must be provided")
+            # raise ValueError("Either image_dir or image_paths must be provided")
+            pass
 
     def __len__(self):
         return len(self.image_paths)
@@ -39,32 +39,27 @@ class HumanFaces(Dataset):
     @staticmethod
     def load(file_path):
 
-        transform = torchvision.transforms.Compose([
-            torchvision.transforms.Resize((IMG_DIMS, IMG_DIMS)),
-            torchvision.transforms.ToTensor(),
-            # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Standard normalization
-        ])
-
         with open(file_path, 'rb') as f:
             image_paths = pickle.load(f)
-        return HumanFaces(image_paths=image_paths, transform=transform)
+        return DatasetObj(image_paths=image_paths, transform=transform)
 
+
+transform = torchvision.transforms.Compose([
+    torchvision.transforms.Resize((IMG_DIMS, IMG_DIMS)),
+    torchvision.transforms.ToTensor(),
+    # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Standard normalization
+])
 
 if __name__ == '__main__':
 
 
-    transform = torchvision.transforms.Compose([
-        torchvision.transforms.Resize((IMG_DIMS, IMG_DIMS)),
-        torchvision.transforms.ToTensor(),
-        # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Standard normalization
-    ])
 
     # Assuming you've already created an instance of the dataset
-    dataset = HumanFaces(image_dir="D:\projects\Humans", transform=transform)
+    dataset = DatasetObj(image_dir="D:/vscodeProjects/Deep-Image-Manipulation/datasets/human_faces_kaggle/Humans", transform=transform)
 
 
     # Save the dataset information
-    with open('datasets/human_faces_paths.pkl', 'wb') as f:
+    with open('dataset-objects/human_faces_paths.pkl', 'wb') as f:
         pickle.dump(dataset.image_paths, f)
 
 
@@ -77,15 +72,9 @@ if __name__ == '__main__':
 
     # view transformed image
 
-    
-
-    # Assuming the ValorantDataset and the transform have been defined as before
-
-    # # Create an instance of the dataset
-    # dataset = ValorantDataset(image_dir='/screenshots/valorant', transform=transform)
 
     # Load an image (for example, the first image in the dataset)
-    img, _ = dataset[12]  # 'img' is now a transformed tensor
+    img, _ = dataset[700]  # 'img' is now a transformed tensor
 
     # Function to convert a tensor to a PIL Image
     def tensor_to_pil(tensor):

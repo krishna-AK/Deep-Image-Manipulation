@@ -7,11 +7,9 @@ class Options:
         self.model = 'swapping_autoencoder'
         self.optimizer = 'swapping_autoencoder'
         self.phase = 'train'
-        self.resume_iter = "latest"
         self.num_classes = 0
 
         # input/output sizes
-        self.batch_size = 2
         self.preprocess = 'scale_width_and_crop'
         self.load_size = 128
         self.crop_size = 128
@@ -33,17 +31,26 @@ class Options:
 
         # Additional parameters
         self.spatial_code_ch = 8
-        self.global_code_ch = 2048
-        self.netG_num_base_resnet_layers = 2
-        self.netE_num_downsampling_sp = 4
-        self.netE_num_downsampling_gl = 2
-        self.netG_no_of_upsamplings = self.netE_num_downsampling_sp
-        self.patch_size = self.load_size // 4
+        self.global_code_ch = 512
+        self.netE_num_downsampling_sp = 3
+        self.netE_num_downsampling_gl = 1
+        self.netG_num_base_resnet_layers = 3
+        self.netG_no_of_upsamplings = 3
 
         #     train params
         self.isTrain = True
-        self.continue_train = True
-        self.resume_iter = "62400"
+        self.batch_size = 16
+        self.continue_train = False
+        self.resume_iter = "0"
+        self.resume_epochs_completed = 0
+
+        # iter attributes
+        # self.total_nimgs = 1000000000
+        self.total_epochs = 10
+        self.save_freq = 1
+        # self.evaluation_freq = 500000000000
+        self.print_freq = 10
+        # self.display_freq = 1000000000000000
 
         # Additional parameters
         self.netG_scale_capacity = 1
@@ -55,11 +62,12 @@ class Options:
         self.lambda_L1 = 1.0
         self.lambda_GAN = 1.0
         self.lambda_PatchGAN = 1.0
+        self.patch_size = self.load_size // 4
         self.patch_min_scale = 1 / 8
         self.patch_max_scale = 1 / 4
         self.patch_num_crops = 8
         self.patch_use_aggregation = True
-        self.netPatchD_scale_capacity = 4.0
+        self.netPatchD_scale_capacity = 2.0
         self.netPatchD_max_nc = 256 + 128
 
         self.max_num_tiles = 8
@@ -71,15 +79,8 @@ class Options:
         self.beta2 = 0.99
         self.R1_once_every = 16
 
-        # iter attributes
-        self.total_nimgs = 1000000000
-        self.save_freq = self.batch_size*400
-        self.evaluation_freq = 500000000000
-        self.print_freq = 10
-        self.display_freq = 1000000000000000
-
         self.save_training_models_dir = 'train_models/'
-        self.model_config_str = 'default'
+        self.model_dir = 'default'
 
 
     def load_from_file(self, file_path):

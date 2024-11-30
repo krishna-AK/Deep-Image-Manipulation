@@ -666,6 +666,63 @@ class ConvLayer(nn.Sequential):
     def forward(self, x):
         out = super().forward(x)
         return out
+    
+
+
+
+class ConvLayerWithStride(nn.Sequential):
+    def __init__(
+        self,
+        in_channel,
+        out_channel,
+        kernel_size,
+        downsample=False,
+        blur_kernel=[1, 3, 3, 1],
+        bias=True,
+        activate=True,
+        pad=None,
+        reflection_pad=False,
+        stride=None,  # Explicit stride parameter
+    ):
+        layers = []
+        stride = stride or (2 if downsample else 1)  # Default to 2 for downsampling, otherwise 1
+
+        if downsample:
+            factor = stride if stride else 2
+            if pad is None:
+                pad = (len(blur_kernel) - factor) + (kernel_size - 1)
+            pad0 = max(0, (pad + 1) // 2)
+            pad1 = max(0, pad // 2)
+
+            layers.append(("Blur", Blur(blur_kernel, pad=(pad0, pad1), reflection_pad=reflection_pad)))
+            self.padding = 0
+        else:
+            self.padding = kernel_size // 2 if pad is None else pad
+            if reflection_pad:
+                layers.append(("RefPad", nn.ReflectionPad2d(self.padding)))
+                self.padding = 0
+
+        # Add convolutional layer
+        layers.append((
+            "Conv",
+            EqualConv2d(
+                in_channel,
+                out_channel,
+                kernel_size,
+                padding=self.padding,
+                stride=stride,  # Use the provided stride
+                bias=bias and not activate,
+            ),
+        ))
+
+        # Add activation layer if needed
+        if activate:
+            layers.append(("Act", FusedLeakyReLU(out_channel)))
+
+        super().__init__(OrderedDict(layers))
+
+    def forward(self, x):
+        return super().forward(x)
 
 
 
@@ -691,52 +748,99 @@ class ResBlock(nn.Module):
         out = (out + skip) / math.sqrt(2)
 
         return out
+    
+
+class ResBlockDownBy4(nn.Module):
+    def __init__(self, in_channel, out_channel, blur_kernel=[1, 3, 3, 1], reflection_pad=False, pad=1, downsample=True):
+        super().__init__()
+
+        # First convolution: downsample by a factor of 2
+        self.conv1 = ConvLayer(
+            in_channel, in_channel, kernel_size=3,
+            downsample=downsample, blur_kernel=blur_kernel, reflection_pad=reflection_pad
+        )
+        
+        # Second convolution: downsample again by a factor of 2
+        self.conv2 = ConvLayer(
+            in_channel, out_channel, kernel_size=3, 
+            downsample=downsample, blur_kernel=blur_kernel, reflection_pad=reflection_pad
+        )
+        
+        # Skip connection: downsample directly by a factor of 4
+        self.skip = ConvLayerWithStride(
+            in_channel, out_channel, kernel_size=1, stride=4,
+            downsample=downsample, blur_kernel=blur_kernel, activate=False, bias=False
+        )
+
+    def forward(self, input):
+        # Main path: Two convolutions for downsampling by 4
+        out = self.conv1(input)  # Downsample by 2
+        out = self.conv2(out)    # Downsample by another factor of 2 (total 4)
+        
+        # Skip connection: Downsample by 4 directly
+        skip = self.skip(input)
+
+        # Combine main and skip paths, normalized
+        out = (out + skip) / math.sqrt(2)
+
+        return out
 
 
 class Discriminator(nn.Module):
     def __init__(self, size, channel_multiplier=2, blur_kernel=[1, 3, 3, 1]):
         super().__init__()
-
+        max_channels = 256
         channels = {
-            4: 512,
-            8: 512,
-            16: min(512, int(512 * channel_multiplier)),
-            32: min(512, int(512 * channel_multiplier)),
-            64: int(256 * channel_multiplier),
-            128: int(128 * channel_multiplier),
-            256: int(64 * channel_multiplier),
-            512: int(32 * channel_multiplier),
-            1024: int(16 * channel_multiplier),
+            4: max_channels,
+            8: max_channels,
+            16: min(max_channels, int(max_channels * channel_multiplier)),
+            32: min(max_channels, int(max_channels * channel_multiplier)),
+            64: int(max_channels//2 * channel_multiplier),
+            128: int(max_channels//4 * channel_multiplier),
+            256: int(max_channels//8 * channel_multiplier),
+            512: int(max_channels//16 * channel_multiplier),
+            1024: int(max_channels//32 * channel_multiplier),
         }
 
         original_size = size
 
         size = 2 ** int(round(math.log(size, 2)))
 
-        convs = [('0', ConvLayer(3, channels[size], 1))]
+        convs = [('0', ConvLayer(3, 128, 1, downsample=True))]
 
         log_size = int(math.log(size, 2))
 
         in_channel = channels[size]
 
-        for i in range(log_size, 2, -1):
-            out_channel = channels[2 ** (i - 1)]
-            layer_name = str(9 - i) if i <= 8 else "%dx%d" % (2 ** i, 2 ** i)
-            convs.append((layer_name, ResBlock(in_channel, out_channel, blur_kernel)))
+        # for i in range(log_size, 4, -1):
+        #     out_channel = channels[2 ** (i - 1)]
+        #     layer_name = str(9 - i) if i <= 8 else "%dx%d" % (2 ** i, 2 ** i)
+        #     convs.append((layer_name, ResBlock(in_channel, out_channel, blur_kernel)))
 
-            in_channel = out_channel
+        #     in_channel = out_channel
+
+        layer_name = "REsblocks"
+        convs.append((layer_name+'1', ResBlock(128, 256, blur_kernel)))
+        convs.append((layer_name+'2', ResBlock(256, 512, blur_kernel)))
+        convs.append((layer_name+'3', ResBlock(512, 512, blur_kernel)))
+        convs.append((layer_name+'4', ResBlock(512, 1024, blur_kernel)))
+        # convs.append((layer_name+'3', ResBlockDownBy4(512, 512, blur_kernel)))
+        # convs.append((layer_name+'3', ConvLayer(512, 512, 3, blur_kernel=blur_kernel, downsample=True)))
+        # convs.append((layer_name+'4', ConvLayer(512, 512, 3, blur_kernel=blur_kernel, downsample=True)))
+        # convs.append((layer_name+'5', ConvLayer(512, 512, 3, blur_kernel=blur_kernel, downsample=True)))
 
         self.convs = nn.Sequential(OrderedDict(convs))
 
         #self.stddev_group = 4
         #self.stddev_feat = 1
 
-        self.final_conv = ConvLayer(in_channel, channels[4], 3)
+        self.final_conv = ConvLayer(1024, 1024, 3, downsample=True)
 
-        side_length = int(4 * original_size / size)
+        # side_length = int(4 * original_size / size)
+        side_length = 2
         self.final_linear = nn.Sequential(
-            EqualLinear(channels[4] * (side_length ** 2), channels[4], activation='fused_lrelu'),
-            EqualLinear(channels[4], 1),
+            EqualLinear(1024 * (side_length ** 2), 1024, activation='fused_lrelu'),
+            EqualLinear(1024, 1),
         )
 
     def forward(self, input):

@@ -3,3 +3,5 @@ checkpoints
 datasets
 .venv
 train_models
+datasets/*
+dataset-objects/*

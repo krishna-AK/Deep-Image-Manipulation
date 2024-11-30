@@ -55,7 +55,7 @@ class SwappingAutoencoderOptimizer():
             p.requires_grad_(requires_grad)
 
     def prepare_images(self, data_i):
-        return data_i["real_A"]
+        return data_i[0]
 
     def toggle_training_mode(self):
         modes = ["discriminator", "generator"]
@@ -63,15 +63,30 @@ class SwappingAutoencoderOptimizer():
         return modes[self.train_mode_counter]
 
     def train_one_step(self, data_i, total_steps_so_far):
-        # images_minibatch = self.prepare_images(data_i)
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        # images_minibatch = data_i.to(device)
-        images_minibatch = torch.cat(data_i, dim=0).to(device)
+        images_minibatch = self.prepare_images(data_i)
         if self.toggle_training_mode() == "generator":
             losses = self.train_discriminator_one_step(images_minibatch)
         else:
             losses = self.train_generator_one_step(images_minibatch)
         return util.to_numpy(losses)
+
+    # def train_one_step(self, data_i, total_steps_so_far):
+    #     device = torch.device("cuda:0")
+        
+    #     # Move tensors to GPU individually to reduce memory spikes
+    #     images_minibatch = [img.to(device) for img in data_i]
+        
+    #     # Combine tensors after moving to GPU
+    #     images_minibatch = torch.cat(images_minibatch, dim=0)
+
+    #     # Toggle training mode between generator and discriminator
+    #     if self.toggle_training_mode() == "generator":
+    #         losses = self.train_discriminator_one_step(images_minibatch)
+    #     else:
+    #         losses = self.train_generator_one_step(images_minibatch)
+
+    #     # Convert losses to numpy for easier processing
+    #     return util.to_numpy(losses)
 
     def train_generator_one_step(self, images):
         self.set_requires_grad(self.Dparams, False)
@@ -139,18 +154,18 @@ class SwappingAutoencoderOptimizer():
                :param save_optimizer_state: Flag to indicate if optimizer state should be saved.
                """
 
-        epoch = total_steps_so_far
-        save_dir = self.model.opt.save_training_models_dir
+        steps = total_steps_so_far
+        save_dir = self.model.opt.model_dir
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         new_model_filenames = [
-            f'E_epoch_{epoch}.pth',
-            f'G_epoch_{epoch}.pth',
-            f'D_epoch_{epoch}.pth',
-            f'Dpatch_epoch_{epoch}.pth',
-            f'optimizer_G_epoch_{epoch}.pth' if save_optimizer_state else '',
-            f'optimizer_D_epoch_{epoch}.pth' if save_optimizer_state else ''
+            f'E_steps_{steps}.pth',
+            f'G_steps_{steps}.pth',
+            f'D_steps_{steps}.pth',
+            f'Dpatch_steps_{steps}.pth',
+            f'optimizer_G_steps_{steps}.pth' if save_optimizer_state else '',
+            f'optimizer_D_steps_{steps}.pth' if save_optimizer_state else ''
         ]
         new_model_paths = [os.path.join(save_dir, filename) for filename in new_model_filenames if filename]
 
@@ -159,7 +174,8 @@ class SwappingAutoencoderOptimizer():
             torch.save(self.model.E.state_dict(), new_model_paths[0])
             torch.save(self.model.G.state_dict(), new_model_paths[1])
             torch.save(self.model.D.state_dict(), new_model_paths[2])
-            torch.save(self.model.Dpatch.state_dict(), new_model_paths[3])
+            if self.opt.lambda_PatchGAN > 0:
+                torch.save(self.model.Dpatch.state_dict(), new_model_paths[3])
             if save_optimizer_state:
                 torch.save(self.optimizer_G.state_dict(), new_model_paths[4])
                 torch.save(self.optimizer_D.state_dict(), new_model_paths[5])
@@ -167,15 +183,15 @@ class SwappingAutoencoderOptimizer():
             # Delete old model files after successful save
             existing_pth_files = glob.glob(os.path.join(save_dir, '*.pth'))
             for file in existing_pth_files:
-                if 'epoch_' in os.path.basename(file) and os.path.basename(file) not in new_model_filenames:
+                if 'steps_' in os.path.basename(file) and os.path.basename(file) not in new_model_filenames:
                     os.remove(file)
 
-            print(f"Model and optimizer states saved at epoch {epoch}")
+            print(f"Model and optimizer states saved at steps {steps}")
 
         except IOError as e:
-            print(f"Error saving model at epoch {epoch}: {e}")
+            print(f"Error saving model at steps {steps}: {e}")
 
-    def load(self, epoch):
+    def load(self, steps):
         """
         Load the model's state from saved files.
 
@@ -183,10 +199,10 @@ class SwappingAutoencoderOptimizer():
         :param epoch: Epoch number from which to load the saved states.
         """
 
-        load_dir = self.opt.save_training_models_dir
+        load_dir = self.opt.model_dir
         # File paths for the saved states
-        optimizer_G_path = os.path.join(load_dir, f'optimizer_G_epoch_{epoch}.pth')
-        optimizer_D_path = os.path.join(load_dir, f'optimizer_D_epoch_{epoch}.pth')
+        optimizer_G_path = os.path.join(load_dir, f'optimizer_G_steps_{steps}.pth')
+        optimizer_D_path = os.path.join(load_dir, f'optimizer_D_steps_{steps}.pth')
 
         # Check if the files exist
         if not os.path.exists(optimizer_G_path) or not os.path.exists(optimizer_D_path):
@@ -197,4 +213,4 @@ class SwappingAutoencoderOptimizer():
         self.optimizer_G.load_state_dict(torch.load(optimizer_G_path,map_location=self.opt.device))
         self.optimizer_D.load_state_dict(torch.load(optimizer_D_path, map_location=self.opt.device))
 
-        print(f"Optimizer loaded from epoch {epoch}")
+        print(f"Optimizer loaded from epoch {steps}")

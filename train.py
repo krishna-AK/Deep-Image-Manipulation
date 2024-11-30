@@ -1,139 +1,198 @@
 import itertools
 import sys
 import os
-# import data
 import torch
 from torch.utils.data import DataLoader
-# 1
-import models
-import optimizers
+import gc
+from datetime import datetime  # For timestamps
 
-from HumanFaces import HumanFaces
-from AnimeDataset import AnimeDataset
+from prepare_dataset_object import DatasetObj
 from models.swapping_autoencoder_model import SwappingAutoencoderModel
 from optimizers.swapping_autoencoder_optimizer import SwappingAutoencoderOptimizer
-from options import TrainOptions
 from options.Options import Options
 from util import IterationCounter
-# from util import Visualizer
-from util import MetricTracker
-# from evaluation import GroupEvaluator
-
+from torch.utils.data import Subset
 
 
 def createAndSetModelFolder(opt):
-    # Create a folder name using the given values
+    # Create a folder name using the given options
     folder_name = (f"Folder_SC{opt.spatial_code_ch}_GC{opt.global_code_ch}_Res{opt.netG_num_base_resnet_layers}"
                    f"_DSsp{opt.netE_num_downsampling_sp}"
                    f"_DSgl{opt.netE_num_downsampling_gl}_Ups{opt.netG_no_of_upsamplings}_PS{opt.patch_size}")
 
+    # Use os.path.join for proper path handling
+    model_dir = os.path.join(opt.save_training_models_dir, folder_name)
+
     # Create the folder if it doesn't exist
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
-        opt.save_training_models_dir += folder_name+"/"
-        opt.model_config_str = folder_name
-        return folder_name
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+        print(f"Created model folder at: {model_dir}")
     else:
-        opt.save_training_models_dir += folder_name + "/"
-        opt.model_config_str = folder_name
-        return folder_name
+        print(f"Model folder already exists at: {model_dir}")
+
+    # Set the model_path attribute in opt
+    opt.model_dir = model_dir
+
+    return model_dir
 
 
 def logLosses(loss_log, dir):
-    log_file_name = os.path.join(dir, 'loss_log.txt')
+    log_file_name = os.path.join(dir, 'training_log.txt')
 
-    # Check if the directory exists, create if not
     if not os.path.exists(dir):
         os.makedirs(dir)
 
     try:
         with open(log_file_name, 'a') as f:
             f.write('\n'.join(loss_log) + '\n')
-        print("losses logged!")
-        # Flush the log
+            f.write('-' * 80 + '\n')
+        print("Training log updated!")
     except IOError as e:
         print(f"Error writing to log file: {e}")
 
 
-# Setup device
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(device)
+def get_gradient_flow(model, name="Model"):
+    """
+    Compute and log the gradient flow for a model.
+    """
+    grad_norms = []
+    for param in model.parameters():
+        if param.grad is not None:
+            grad_norms.append(param.grad.norm().item())
+    avg_grad = sum(grad_norms) / len(grad_norms) if grad_norms else 0.0
+    return f"{name} Avg Gradient Norm: {avg_grad:.6f}"
 
-opt = Options()
-createAndSetModelFolder(opt)
 
-data = HumanFaces.load('datasets/human_faces_paths.pkl')
-dataset = DataLoader(data, batch_size=opt.batch_size, shuffle=True)  # Adjust batch size as needed
-dataset_iterator = itertools.cycle(dataset)
+class Prefetcher:
+    """
+    Prefetcher to preload data batches onto GPU.
+    """
+    def __init__(self, loader, device):
+        self.loader = iter(loader)
+        self.device = device
+        self.stream = torch.cuda.Stream()
+        self.preload()
 
-opt.dataset = dataset
-iter_counter = IterationCounter(opt)
+    def preload(self):
+        try:
+            self.next_data = next(self.loader)
+            with torch.cuda.stream(self.stream):
+                self.next_data = [item.to(self.device, non_blocking=True) for item in self.next_data]
+        except StopIteration:
+            self.next_data = None
 
-metric_tracker = MetricTracker(opt)
+    def next(self):
+        torch.cuda.current_stream().wait_stream(self.stream)
+        data = self.next_data
+        self.preload()
+        return data
 
-# evaluators = GroupEvaluator(opt)
+    def __iter__(self):
+        return self
 
-model = SwappingAutoencoderModel(opt)
-optimizer = SwappingAutoencoderOptimizer(model)
+    def __next__(self):
+        if self.next_data is None:
+            raise StopIteration
+        return self.next()
 
-loss_log = []
-log_losses_every_in_batches = opt.batch_size*100
-try:
-    while not iter_counter.completed_training():
-        with iter_counter.time_measurement("data"):
-            cur_data = next(dataset_iterator)
-            if len(cur_data) != opt.batch_size:
-                continue
 
-        with iter_counter.time_measurement("train"):
-            losses = optimizer.train_one_step(cur_data, iter_counter.steps_so_far)
-            # print(losses)
-            print("iter : ",iter_counter.steps_so_far)
-            for key in sorted(losses.keys()):
-                print(key+" : "+str(losses[key]),end = ',')
-            print(end = '\n')
-            metric_tracker.update_metrics(losses, smoothe=True)
+def train():
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA not available! Aborting training.")
+    
+    device = torch.device('cuda')
 
-            # Log losses
-            loss_str = f"Iteration :{iter_counter.steps_so_far}, " + ", ".join(
-                f"{key}: {losses[key]}" for key in sorted(losses.keys()))
-            loss_log.append(loss_str)
+    # Initialize options and directories
+    opt = Options()
+    createAndSetModelFolder(opt)
 
-            # Every 1000 iterations, write losses to a file and reset the log
-            # if iter_counter.steps_so_far % log_losses_every_in_batches == 0:
-            #     logLosses(loss_log,opt.save_training_models_dir)
-            #     loss_log.clear()
+    # Load dataset
+    data = DatasetObj.load('dataset-objects/human_faces_paths.pkl')
 
-        # with iter_counter.time_measurement("maintenance"):
-            # if iter_counter.needs_printing():
-            #     visualizer.print_current_losses(iter_counter.steps_so_far,
-            #                                     iter_counter.time_measurements,
-            #                                     metric_tracker.current_metrics())
+    # Limit the dataset to 7000 samples
+    subset_size = 7000
+    subset_indices = torch.arange(subset_size)
+    limited_data = Subset(data, subset_indices)
 
-            # if iter_counter.needs_displaying():
-            #     visuals = optimizer.get_visuals_for_snapshot(cur_data)
-            #     visualizer.display_current_results(visuals,
-            #                                        iter_counter.steps_so_far)
+    # Optimized DataLoader setup
+    dataset = DataLoader(
+        limited_data,
+        batch_size=opt.batch_size,
+        shuffle=True,
+        num_workers=4,  # Adjust this based on your CPU cores
+        pin_memory=True,
+        prefetch_factor=4,  # Tune this based on available memory
+        persistent_workers=True  # Workers remain active across epochs
+    )
+    opt.dataset = dataset
+    iter_counter = IterationCounter(opt)
 
-            # if iter_counter.needs_evaluation():
-            #     metrics = evaluators.evaluate(
-            #         model, dataset, iter_counter.steps_so_far)
-            #     metric_tracker.update_metrics(metrics, smoothe=False)
+    # Initialize model and optimizer
+    model = SwappingAutoencoderModel(opt).to(device)
+    optimizer = SwappingAutoencoderOptimizer(model)
 
-            if iter_counter.needs_saving() and iter_counter.steps_so_far != int(opt.resume_iter):
-                optimizer.save(iter_counter.steps_so_far)
-                logLosses(loss_log, opt.save_training_models_dir)
-                loss_log.clear()
+    loss_log = []
+    total_epochs = opt.total_epochs
 
-            if iter_counter.completed_training():
-                print("Training ended by iter")
-                sys.exit(0)
-                break
+    try:
+        while not iter_counter.completed_training():
+            print(f"Starting epoch {iter_counter.epochs_completed + 1}/{total_epochs}")
+            dataset_iterator = Prefetcher(dataset, device)
 
-            iter_counter.record_one_iteration()
-except Exception as e:
-    print(e)
-finally:
-    # optimizer.save(iter_counter.steps_so_far)
-    print('Training finished.')
+            for batch_idx, cur_data in enumerate(dataset_iterator):
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+                with iter_counter.time_measurement("data"):
+                    # Data is already on the GPU due to Prefetcher
+                    pass
+
+                with iter_counter.time_measurement("train"):
+                    losses = optimizer.train_one_step(cur_data, iter_counter.steps_so_far)
+
+                    # Log losses to console
+                    print(f"Iteration {iter_counter.steps_so_far}: ", end="")
+                    for key in sorted(losses.keys()):
+                        print(f"{key}: {losses[key]:.4f}", end=", ")
+                    print()
+
+                    # Compute gradient flow (if needed)
+                    gen_grad_flow = get_gradient_flow(model.G, "Generator")
+                    disc_grad_flow = get_gradient_flow(model.D, "Discriminator")
+                    patch_disc_grad_flow = get_gradient_flow(model.Dpatch, "Patch Discriminator")
+
+                    # Log all information
+                    log_entry = (
+                        f"Timestamp: {timestamp}, "
+                        f"Epoch {iter_counter.epochs_completed + 1}, "
+                        f"Iteration {iter_counter.steps_so_far}, "
+                        f"Losses: {', '.join(f'{key}: {losses[key]:.4f}' for key in sorted(losses.keys()))}, "
+                        f"{gen_grad_flow}, {disc_grad_flow}, {patch_disc_grad_flow}"
+                    )
+                    loss_log.append(log_entry)
+
+                iter_counter.record_one_iteration()
+
+            iter_counter.record_one_epoch()
+            print(f"Epoch {iter_counter.epochs_completed} completed.")
+
+            # Save the model after every epoch
+            optimizer.save(iter_counter.steps_so_far)
+
+            # End of an epoch, log everything
+            logLosses(loss_log, opt.model_dir)
+            loss_log.clear()
+
+        print("Training completed.")
+
+    except Exception as e:
+        print(f"Error during training: {e}")
+    finally:
+        print("Training finished.")
+
+
+if __name__ == '__main__':
+    # Clear GPU memory
+    gc.collect()
+    torch.cuda.empty_cache()
+    print(torch.cuda.memory_summary(device=None, abbreviated=False))
+    train()

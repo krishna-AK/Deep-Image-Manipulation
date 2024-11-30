@@ -122,24 +122,32 @@ class StyleGAN2PatchDiscriminator(BasePatchDiscriminator):
 
         blur_kernel = [1, 3, 3, 1] if self.opt.use_antialias else [1]
 
-        convs = [('0', ConvLayer(3, in_channel, 3))]
+        convs = [('0', ConvLayer(3, 32, 3))]
 
-        for i in range(log_size, 2, -1):
-            out_channel = channels[2 ** (i - 1)]
+        # for i in range(log_size, 4, -1):
+        #     out_channel = channels[2 ** (i - 1)]
 
-            layer_name = str(7 - i) if i <= 6 else "%dx%d" % (2 ** i, 2 ** i)
-            convs.append((layer_name, ResBlock(in_channel, out_channel, blur_kernel)))
+        #     layer_name = str(7 - i) if i <= 6 else "%dx%d" % (2 ** i, 2 ** i)
+        #     convs.append((layer_name, ResBlock(in_channel, out_channel, blur_kernel, downsample=True)))
 
-            in_channel = out_channel
+        #     in_channel = out_channel
 
-        convs.append(('5', ResBlock(in_channel, self.opt.netPatchD_max_nc * 2, downsample=False)))
-        convs.append(('6', ConvLayer(self.opt.netPatchD_max_nc * 2, self.opt.netPatchD_max_nc, 3, pad=0)))
+        layer_name = "Resblock"
+        convs.append((layer_name+'1', ResBlock(32, 64, blur_kernel, downsample=True)))
+        convs.append((layer_name+'2', ResBlock(64, 128, blur_kernel, downsample=True)))
+        convs.append((layer_name+'3', ResBlock(128, 256, blur_kernel, downsample=True)))
+        convs.append((layer_name+'4', ResBlock(256, 512, blur_kernel, downsample=True)))
+        convs.append((layer_name+'5', ConvLayer(512, 1024, kernel_size=2, pad = 0)))
+        # convs.append((layer_name+'6', ResBlock(1024, 2048, blur_kernel, downsample=True)))
+
+        # convs.append(('5', ResBlock(512, 1024, downsample=True)))
+        # convs.append(('6', ConvLayer(self.opt.netPatchD_max_nc * 2, self.opt.netPatchD_max_nc, 3, pad=0)))
 
         self.convs = nn.Sequential(OrderedDict(convs))
 
         out_dim = 1
-
-        pairlinear1 = EqualLinear(channels[4] * 2 * 2 * 2, 2048, activation='fused_lrelu')
+        side_length = 1
+        pairlinear1 = EqualLinear(2*(side_length**2)*1024, 2048, activation='fused_lrelu')
         pairlinear2 = EqualLinear(2048, 2048, activation='fused_lrelu')
         pairlinear3 = EqualLinear(2048, 1024, activation='fused_lrelu')
         pairlinear4 = EqualLinear(1024, out_dim)

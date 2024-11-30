@@ -24,6 +24,7 @@ class IterationCounter:
         #     self.batch_size = opt.batch_size * 2
         # else:
         self.batch_size = opt.batch_size
+        self.epochs_completed = 0
         self.time_measurements = {}
 
         # automatically_find_resume_iter = opt.isTrain and opt.continue_train \
@@ -43,31 +44,35 @@ class IterationCounter:
             if "k" in opt.resume_iter:
                 steps *= 1000
             self.steps_so_far = steps
+            self.epochs_completed = opt.resume_epochs_completed
         else:
             self.steps_so_far = 0
 
     def record_one_iteration(self):
-        if self.needs_saving():
-            np.savetxt(self.iter_record_path,
-                       [self.steps_so_far], delimiter=',', fmt='%d')
-            print("Saved current iter count at %s" % self.iter_record_path)
+        # if self.needs_saving():
+        #     np.savetxt(self.iter_record_path,
+        #                [self.steps_so_far], delimiter=',', fmt='%d')
+        #     print("Saved current iter count at %s" % self.iter_record_path)
         self.steps_so_far += self.batch_size
 
-    def needs_saving(self):
-        return (self.steps_so_far % self.opt.save_freq) < self.batch_size
+    def record_one_epoch(self):
+        self.epochs_completed += 1
 
-    def needs_evaluation(self):
-        return (self.steps_so_far >= self.opt.evaluation_freq) and \
-            ((self.steps_so_far % self.opt.evaluation_freq) < self.batch_size)
+    # def needs_saving(self):
+    #     return (self.steps_so_far % self.opt.save_freq) < self.batch_size
 
-    def needs_printing(self):
-        return (self.steps_so_far % self.opt.print_freq) < self.batch_size
+    # def needs_evaluation(self):
+    #     return (self.steps_so_far >= self.opt.evaluation_freq) and \
+    #         ((self.steps_so_far % self.opt.evaluation_freq) < self.batch_size)
 
-    def needs_displaying(self):
-        return (self.steps_so_far % self.opt.display_freq) < self.batch_size
+    # def needs_printing(self):
+    #     return (self.steps_so_far % self.opt.print_freq) < self.batch_size
+
+    # def needs_displaying(self):
+    #     return (self.steps_so_far % self.opt.display_freq) < self.batch_size
 
     def completed_training(self):
-        return (self.steps_so_far >= self.opt.total_nimgs)
+        return (self.epochs_completed >= self.opt.total_epochs)
 
     class TimeMeasurement:
         def __init__(self, name, parent):
