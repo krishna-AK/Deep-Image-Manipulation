@@ -48,7 +48,7 @@ def train(rank, world_size, opt, dataset_object_path):
     data = DatasetObj.load(dataset_object_path)
 
     # Limit the dataset
-    subset_size = 1000
+    subset_size = 70000
     subset_indices = torch.arange(subset_size)
     limited_data = Subset(data, subset_indices)
 

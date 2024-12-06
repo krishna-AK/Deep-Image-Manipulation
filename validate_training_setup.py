@@ -4,7 +4,7 @@ import torch
 import gc
 
 
-
+# script to test 1 epoch
 
 if __name__ == '__main__':
     opt = Options()
