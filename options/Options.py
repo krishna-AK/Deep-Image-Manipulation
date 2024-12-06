@@ -31,11 +31,11 @@ class Options:
 
         # Additional parameters
         self.spatial_code_ch = 8
-        self.global_code_ch = 512
-        self.netE_num_downsampling_sp = 3
+        self.global_code_ch = 2048
+        self.netE_num_downsampling_sp = 2
         self.netE_num_downsampling_gl = 1
         self.netG_num_base_resnet_layers = 3
-        self.netG_no_of_upsamplings = 3
+        self.netG_no_of_upsamplings = 2
 
         #     train params
         self.isTrain = True
@@ -57,12 +57,15 @@ class Options:
         self.netE_scale_capacity = 1
         self.netG_use_noise = True
         self.netE_nc_steepness = 2
-        self.lambda_R1 = 10.0
-        self.lambda_patch_R1 = 1.0
+        # self.lambda_R1 = 10.0
+        self.lambda_R1 = 0
+        # self.lambda_patch_R1 = 1.0
+        self.lambda_patch_R1 = 0
         self.lambda_L1 = 1.0
         self.lambda_GAN = 1.0
-        self.lambda_PatchGAN = 1.0
-        self.patch_size = self.load_size // 4
+        # self.lambda_PatchGAN = 1.0
+        self.lambda_PatchGAN = 1
+        self.patch_size = 32
         self.patch_min_scale = 1 / 8
         self.patch_max_scale = 1 / 4
         self.patch_num_crops = 8
@@ -74,14 +77,15 @@ class Options:
         self.patch_random_transformation = False
 
         # optimizer attributes
-        self.lr = 0.002
+        self.lr_G = 0.005
+        self.lr_D = 0.005
         self.beta1 = 0.0
         self.beta2 = 0.99
         self.R1_once_every = 16
 
         self.save_training_models_dir = 'train_models/'
         self.model_dir = 'default'
-        self.dataset_name = 'dummy'
+        self.dataset_name = 'dummy-2'
 
 
     def load_from_file(self, file_path):

@@ -1,9 +1,9 @@
-import itertools
-import sys
 import os
-import torch
-from torch.utils.data import DataLoader
 import gc
+import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, Subset, DistributedSampler
 from datetime import datetime  # For timestamps
 
 from prepare_dataset_object import DatasetObj
@@ -11,190 +11,172 @@ from models.swapping_autoencoder_model import SwappingAutoencoderModel
 from optimizers.swapping_autoencoder_optimizer import SwappingAutoencoderOptimizer
 from options.Options import Options
 from util import IterationCounter
-from torch.utils.data import Subset
-
 
 def createAndSetModelFolder(opt):
-    # Create a folder name using the given options
     folder_name = (f"Folder_SC{opt.spatial_code_ch}_GC{opt.global_code_ch}_Res{opt.netG_num_base_resnet_layers}"
-                   f"_DSsp{opt.netE_num_downsampling_sp}"
-                   f"_DSgl{opt.netE_num_downsampling_gl}_Ups{opt.netG_no_of_upsamplings}_PS{opt.patch_size}"
-                   f"-{opt.dataset_name}")
-
-    # Use os.path.join for proper path handling
+                   f"_DSsp{opt.netE_num_downsampling_sp}_DSgl{opt.netE_num_downsampling_gl}_Ups{opt.netG_no_of_upsamplings}"
+                   f"_PS{opt.patch_size}-{opt.dataset_name}")
     model_dir = os.path.join(opt.save_training_models_dir, folder_name)
-
-    # Create the folder if it doesn't exist
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
-        print(f"Created model folder at: {model_dir}")
-    else:
-        print(f"Model folder already exists at: {model_dir}")
-
-    # Set the model_path attribute in opt
+    os.makedirs(model_dir, exist_ok=True)
     opt.model_dir = model_dir
-
     return model_dir
 
 
 def logLosses(loss_log, dir):
     log_file_name = os.path.join(dir, 'training_log.txt')
-
-    if not os.path.exists(dir):
-        os.makedirs(dir)
-
-    try:
-        with open(log_file_name, 'a') as f:
-            f.write('\n'.join(loss_log) + '\n')
-            f.write('-' * 80 + '\n')
-        print("Training log updated!")
-    except IOError as e:
-        print(f"Error writing to log file: {e}")
+    os.makedirs(dir, exist_ok=True)
+    with open(log_file_name, 'a') as f:
+        f.write('\n'.join(loss_log) + '\n')
+        f.write('-' * 80 + '\n')
 
 
-def get_gradient_flow(model, name="Model"):
-    """
-    Compute and log the gradient flow for a model.
-    """
-    grad_norms = []
-    for param in model.parameters():
-        if param.grad is not None:
-            grad_norms.append(param.grad.norm().item())
-    avg_grad = sum(grad_norms) / len(grad_norms) if grad_norms else 0.0
-    return f"{name} Avg Gradient Norm: {avg_grad:.6f}"
 
+def train(rank, world_size, opt, dataset_object_path):
+    # Initialize process group if running on multiple GPUs
+    if world_size > 1:
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
-class Prefetcher:
-    """
-    Prefetcher to preload data batches onto GPU.
-    """
-    def __init__(self, loader, device):
-        self.loader = iter(loader)
-        self.device = device
-        self.stream = torch.cuda.Stream()
-        self.preload()
+    # Set the device for this process
+    device = torch.device(f'cuda:{rank}')
+    torch.cuda.set_device(device)
 
-    def preload(self):
-        try:
-            self.next_data = next(self.loader)
-            with torch.cuda.stream(self.stream):
-                self.next_data = [item.to(self.device, non_blocking=True) for item in self.next_data]
-        except StopIteration:
-            self.next_data = None
-
-    def next(self):
-        torch.cuda.current_stream().wait_stream(self.stream)
-        data = self.next_data
-        self.preload()
-        return data
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.next_data is None:
-            raise StopIteration
-        return self.next()
-
-
-def train(opt, dataset_object_path):
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA not available! Aborting training.")
-    
-    device = torch.device('cuda')
-
-    createAndSetModelFolder(opt)
+    # Create model folder on rank 0 only
+    if rank == 0:
+        createAndSetModelFolder(opt)
 
     # Load dataset
     data = DatasetObj.load(dataset_object_path)
 
-    # Limit the dataset to 7000 samples
-    subset_size = 7000
+    # Limit the dataset
+    subset_size = 1000
     subset_indices = torch.arange(subset_size)
     limited_data = Subset(data, subset_indices)
 
-    # Optimized DataLoader setup
+    # DistributedSampler ensures the dataset is split across GPUs
+    sampler = DistributedSampler(
+        limited_data, num_replicas=world_size, rank=rank, shuffle=True
+    )
+
     dataset = DataLoader(
         limited_data,
         batch_size=opt.batch_size,
-        shuffle=True,
-        num_workers=4,  # Adjust this based on your CPU cores
+        sampler=sampler,
+        num_workers=8,
         pin_memory=True,
-        prefetch_factor=4,  # Tune this based on available memory
-        persistent_workers=True  # Workers remain active across epochs
+        prefetch_factor=8,
+        persistent_workers=True
     )
-    opt.dataset = dataset
     iter_counter = IterationCounter(opt)
 
     # Initialize model and optimizer
     model = SwappingAutoencoderModel(opt).to(device)
     optimizer = SwappingAutoencoderOptimizer(model)
+    if world_size > 1:
+        model = DDP(model, device_ids=[rank])
+
 
     loss_log = []
     total_epochs = opt.total_epochs
 
     try:
         while not iter_counter.completed_training():
-            print(f"Starting epoch {iter_counter.epochs_completed + 1}/{total_epochs}")
-            dataset_iterator = Prefetcher(dataset, device)
+            
+            print(f"Rank {rank}: Starting epoch {iter_counter.epochs_completed + 1}/{total_epochs}")
 
-            for batch_idx, cur_data in enumerate(dataset_iterator):
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Synchronize across all GPUs before starting an epoch
+            if world_size > 1:
+                dist.barrier()
 
-                with iter_counter.time_measurement("data"):
-                    # Data is already on the GPU due to Prefetcher
-                    pass
+            sampler.set_epoch(iter_counter.epochs_completed)
 
-                with iter_counter.time_measurement("train"):
-                    losses = optimizer.train_one_step(cur_data, iter_counter.steps_so_far)
+            for batch_idx, cur_data in enumerate(dataset):
+                cur_data = [item.to(device, non_blocking=True) for item in cur_data]
 
-                    if iter_counter.steps_so_far%1000 == 0:
-                        # Log losses to console
-                        print(f"Iteration {iter_counter.steps_so_far}: ", end="")
-                        for key in sorted(losses.keys()):
-                            print(f"{key}: {losses[key]:.4f}", end=", ")
-                        print()
+                # Forward and backward passes
+                losses = optimizer.train_one_step(cur_data, iter_counter.steps_so_far)
 
-                    # Compute gradient flow (if needed)
-                    gen_grad_flow = get_gradient_flow(model.G, "Generator")
-                    disc_grad_flow = get_gradient_flow(model.D, "Discriminator")
-                    patch_disc_grad_flow = get_gradient_flow(model.Dpatch, "Patch Discriminator")
+                # # Aggregate losses across all GPUs
+                # aggregated_losses = {}
+                # for key, value in losses.items():
+                #     tensor = torch.tensor(value, device=device)
+                #     if world_size > 1:
+                #         dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+                #     aggregated_losses[key] = tensor.item() / world_size
 
-                    # Log all information
-                    log_entry = (
-                        f"Timestamp: {timestamp}, "
-                        f"Epoch {iter_counter.epochs_completed + 1}, "
-                        f"Iteration {iter_counter.steps_so_far}, "
-                        f"Losses: {', '.join(f'{key}: {losses[key]:.4f}' for key in sorted(losses.keys()))}, "
-                        f"{gen_grad_flow}, {disc_grad_flow}, {patch_disc_grad_flow}"
-                    )
-                    loss_log.append(log_entry)
+                # Log losses on rank 0
+                if iter_counter.steps_so_far %(opt.batch_size) == 0 and rank == 0:
+                    print(f"Iteration {iter_counter.steps_so_far}: ", end="")
+                    for key, value in losses.items():
+                        print(f"{key}: {value:.4f}", end=", ")
+                    print()
+
+                # Log all information
+                log_entry = (
+                    f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, "
+                    f"Epoch {iter_counter.epochs_completed + 1}, "
+                    f"Iteration {iter_counter.steps_so_far}, "
+                    f"Losses: {', '.join(f'{key}: {losses[key]:.4f}' for key in sorted(losses.keys()))}, "
+                )
+                loss_log.append(log_entry)
 
                 iter_counter.record_one_iteration()
 
             iter_counter.record_one_epoch()
-            print(f"Epoch {iter_counter.epochs_completed} completed.")
+            if rank == 0:
+                print(f"Epoch {iter_counter.epochs_completed} completed.")
 
-            # Save the model after every epoch
-            optimizer.save(iter_counter.steps_so_far)
+                # Save model and log losses
+                optimizer.save(iter_counter.steps_so_far)
+                logLosses(loss_log, opt.model_dir)
+                loss_log.clear()
 
-            # End of an epoch, log everything
-            logLosses(loss_log, opt.model_dir)
-            loss_log.clear()
-
-        print("Training completed.")
+        if rank == 0:
+            print("Training completed.")
 
     except Exception as e:
-        print(f"Error during training: {e}")
+        print(f"Rank {rank}: Error during training: {e}")
     finally:
-        print("Training finished.")
+        if world_size > 1:
+            dist.destroy_process_group()
+        print(f"Rank {rank}: Training finished.")
+
+
+
+def train_parallel(opt, dataset_obj_path):
+    # Constants for GPU usage
+    MAX_GPUS = 2  # Adjust this to limit the number of GPUs used
+    total_gpus = torch.cuda.device_count()
+    world_size = min(total_gpus, MAX_GPUS)
+
+    if world_size == 0:
+        raise RuntimeError("No GPUs available!")
+
+    print(f"Using {world_size} out of {torch.cuda.device_count()} available GPUs.")
+
+    # Set environment variables for distributed training
+    os.environ["MASTER_ADDR"] = "127.0.0.1"  # Use localhost for single-node training
+    os.environ["MASTER_PORT"] = "29500"     # Default port; you can change this if needed
+
+    if world_size > 1:
+        torch.multiprocessing.spawn(
+            train,
+            args=(world_size, opt, dataset_obj_path),
+            nprocs=world_size
+        )
+    else:
+        # For single GPU, set these variables explicitly
+        os.environ["WORLD_SIZE"] = str(1)
+        os.environ["RANK"] = str(0)
+        train(0, 1, opt, dataset_obj_path)
 
 
 if __name__ == '__main__':
-    # Clear GPU memory
+     # Clear GPU memory
     gc.collect()
     torch.cuda.empty_cache()
     print(torch.cuda.memory_summary(device=None, abbreviated=False))
 
-    opt = Options()
-    train(opt, 'dataset-objects/human_faces_paths.pkl')
+    train_parallel(opt=Options(), dataset_obj_path='dataset-objects/ffhq-face-data-set.pkl')
+    
+    gc.collect()
+    torch.cuda.empty_cache()

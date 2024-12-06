@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import util
 # from models.networks import BaseNetwork
-from models.networks.stylegan2_layers import ConvLayer, ResBlock, EqualLinear
+from models.networks.stylegan2_layers import ConvLayer, ResBlock, EqualLinear, ResBlockDownBy4
 
 
 class BasePatchDiscriminator(torch.nn.Module):

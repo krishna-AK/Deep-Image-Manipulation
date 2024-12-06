@@ -12,17 +12,17 @@ class SwappingAutoencoderOptimizer():
     Implements Generator / Discriminator training, R1 gradient penalty,
     decaying learning rates, and reporting training progress.
     """
-    @staticmethod
-    def modify_commandline_options(parser, is_train):
-        parser.add_argument("--lr", default=0.002, type=float)
-        parser.add_argument("--beta1", default=0.0, type=float)
-        parser.add_argument("--beta2", default=0.99, type=float)
-        parser.add_argument(
-            "--R1_once_every", default=16, type=int,
-            help="lazy R1 regularization. R1 loss is computed "
-                 "once in 1/R1_freq times",
-        )
-        return parser
+    # @staticmethod
+    # def modify_commandline_options(parser, is_train):
+    #     parser.add_argument("--lr", default=0.002, type=float)
+    #     parser.add_argument("--beta1", default=0.0, type=float)
+    #     parser.add_argument("--beta2", default=0.99, type=float)
+    #     parser.add_argument(
+    #         "--R1_once_every", default=16, type=int,
+    #         help="lazy R1 regularization. R1 loss is computed "
+    #              "once in 1/R1_freq times",
+    #     )
+    #     return parser
 
     def __init__(self, model):
         self.opt = model.opt
@@ -34,15 +34,19 @@ class SwappingAutoencoderOptimizer():
         self.Gparams = self.model.get_parameters_for_mode("generator")
         self.Dparams = self.model.get_parameters_for_mode("discriminator")
 
-        self.optimizer_G = torch.optim.Adam(
-            self.Gparams, lr=opt.lr, betas=(opt.beta1, opt.beta2)
-        )
+        # self.optimizer_G = torch.optim.Adam(
+        #     self.Gparams, lr=opt.lr_G, betas=(opt.beta1, opt.beta2)
+        # )
+
+        self.optimizer_G = torch.optim.RMSprop(self.Gparams, lr=opt.lr_G)
 
         # c.f. StyleGAN2 (https://arxiv.org/abs/1912.04958) Appendix B
-        c = opt.R1_once_every / (1 + opt.R1_once_every)
-        self.optimizer_D = torch.optim.Adam(
-            self.Dparams, lr=opt.lr * c, betas=(opt.beta1 ** c, opt.beta2 ** c)
-        )
+        # c = opt.R1_once_every / (1 + opt.R1_once_every)
+        # self.optimizer_D = torch.optim.Adam(
+        #     self.Dparams, lr=opt.lr_D*c, betas=(opt.beta1**c, opt.beta2**c)
+        # )
+
+        self.optimizer_D = torch.optim.RMSprop(self.Dparams, lr=opt.lr_D)
 
         if (not self.opt.isTrain) or self.opt.continue_train:
             self.load(int(self.opt.resume_iter.replace("k", "")))
@@ -57,14 +61,20 @@ class SwappingAutoencoderOptimizer():
     def prepare_images(self, data_i):
         return data_i[0]
 
+    # def toggle_training_mode(self):
+    #     modes = ["discriminator","discriminator","discriminator", "generator"]
+    #     self.train_mode_counter = (self.train_mode_counter + 1) % len(modes)
+    #     return modes[self.train_mode_counter]
+
     def toggle_training_mode(self):
-        modes = ["discriminator", "generator"]
-        self.train_mode_counter = (self.train_mode_counter + 1) % len(modes)
-        return modes[self.train_mode_counter]
+        self.train_mode_counter = self.train_mode_counter + 1
+        if (self.train_mode_counter)%2 == 1:
+            return "generator"
+        return "discriminator"
 
     def train_one_step(self, data_i, total_steps_so_far):
         images_minibatch = self.prepare_images(data_i)
-        if self.toggle_training_mode() == "generator":
+        if self.toggle_training_mode() == "discriminator":
             losses = self.train_discriminator_one_step(images_minibatch)
         else:
             losses = self.train_generator_one_step(images_minibatch)

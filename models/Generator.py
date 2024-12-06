@@ -93,7 +93,6 @@ class StyleGAN2ResnetGenerator(torch.nn.Module):
         self.netG_num_base_resnet_layers = opt.netG_num_base_resnet_layers
         self.netG_use_noise = opt.netG_use_noise
         self.netG_scale_capacity = opt.netG_scale_capacity
-        self.netE_num_downsampling_sp = opt.netE_num_downsampling_sp
         self.netG_no_of_upsamplings = opt.netG_no_of_upsamplings
 
         num_upsamplings =   self.netG_no_of_upsamplings
@@ -130,7 +129,7 @@ class StyleGAN2ResnetGenerator(torch.nn.Module):
         self.add_module("ToRGB", last_layer)
 
     def nf(self, num_up):
-        ch = 64 * (2 ** (self.netE_num_downsampling_sp - num_up))
+        ch = 64 * (2 ** (self.netG_no_of_upsamplings - num_up))
         ch = int(min(256, ch) * self.netG_scale_capacity)
         return ch
 
